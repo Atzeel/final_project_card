@@ -23,6 +23,7 @@ public class CardConveyor : MonoBehaviour
 
     private float timer;
     private float spacing;
+    private List<int> cardBag = new List<int>();
 
     private List<ConveyorCard> movingCards = new List<ConveyorCard>();
     private List<ConveyorCard> stackedCards = new List<ConveyorCard>();
@@ -143,6 +144,25 @@ public class CardConveyor : MonoBehaviour
         return lastCard.TrackPosition.x <= spawnX - spacing;
     }
 
+    int DrawCardType()
+    {
+        // 袋子空了，就把 Inspector 里每种牌的编号各放进去一次 if bag empty put all # card in inspector again
+        if (cardBag.Count == 0)
+        {
+            for (int i = 0; i < cardSprites.Length; i++)
+            {
+                cardBag.Add(i);
+            }
+        }
+
+        // 随机选袋子里的一个位置，拿出那个位置上的牌。randomly pick a card from bag
+        int bagIndex = Random.Range(0, cardBag.Count);
+        int cardType = cardBag[bagIndex];
+        cardBag.RemoveAt(bagIndex);
+
+        return cardType;
+    }
+    
     void SpawnCard()
     {
         RectTransform newCard = Instantiate(cardPrefab, cardParent);
@@ -153,7 +173,7 @@ public class CardConveyor : MonoBehaviour
         newCard.pivot = new Vector2(0.5f, 0.5f);
         newCard.localScale = Vector3.one;
 
-        int randomIndex = Random.Range(0, cardSprites.Length);
+        int randomIndex = DrawCardType();
 
         newCard.GetComponent<Image>().sprite = cardSprites[randomIndex];
 
