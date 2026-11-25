@@ -1,32 +1,47 @@
 using System.Collections.Generic;
 using UnityEngine;
+using TMPro;
 
 public class BoardManager : MonoBehaviour
 {
-    [Header("Card Pattern")]
+    [Header("card pictures")]
     public Sprite heartSprite;
     public Sprite starSprite;
     public Sprite diamondSprite;
-    [Tooltip("red means selecting card")]
+    [Tooltip("red=selected")]
     public Sprite highlightFrame;
 
-    [Header("Layout")]
+    [Header("layout")]
     public int columns = 4;
-    public float columnSpacing = 1.8f;
-    public float columnTopY = 1.5f;       // first card inevery row's height 
-    public float cardSpacing = 2f;      //gap btween cards）
-    public int maxPerColumn = 8;
-    public bool growDown = true;          // true=up to down；false=visa versa
-    public float dropZoneHeight = 2.5f;   // drop card zone's height
 
-    [Header("UpperPart")]
+    public float columnSpacing = 1.8f;
+    // the place of 1st card each row
+    public float columnTopY = 1.5f;
+    //gap between cards
+    public float cardSpacing = 1.5f;
+    public int maxPerColumn = 9;
+    //true=up to down, visaversa
+    public bool growDown = true;
+    //drop zone he
+    public float dropZoneHeight = 2.5f;
+
+    [Header("top area")]
     public int trayCount = 3;
     public float trayY = 4f;
     public float traySpacing = 2f;
 
-    [Header("Rules")]
-    [Tooltip("click and select, 2 click erase the cards")]
     public bool eliminateOnFirstClick = false;
+
+    [Header("fail check line")]
+    public float loseLineY = -3.5f;
+    public bool showLoseLine = true;
+
+    [Header("Game end ui")]
+    public GameObject gameOverPanel;
+    public TMP_Text gameOverText;
+    
+
+    bool gameOver;
 
     List<Card>[] columnCards;
     Card[] trayCards;
@@ -43,9 +58,56 @@ public class BoardManager : MonoBehaviour
     void Start()
     {
         for (int i = 0; i < trayCount; i++) SpawnTrayCard(i);
+        if (showLoseLine) CreateLoseLine();
+        if (gameOverPanel != null) gameOverPanel.SetActive(false);
+    }
+
+    void Update()
+    {
+        if (SpacePressed()) ResetGame();
+    }
+
+    static bool SpacePressed()
+    {
+#if ENABLE_INPUT_SYSTEM
+        var kb = UnityEngine.InputSystem.Keyboard.current;
+        return kb != null && kb.spaceKey.wasPressedThisFrame;
+#else
+        return Input.GetKeyDown(KeyCode.Space);
+#endif
     }
     
-    //
+    void OnGUI()
+    {
+        if (!gameOver || gameOverPanel != null) return;
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 36,
+            fontStyle = FontStyle.Bold
+        };
+        style.normal.textColor = Color.white;
+        GUI.Box(new Rect(0, 0, Screen.width, Screen.height), GUIContent.none);
+        GUI.Label(new Rect(0, 0, Screen.width, Screen.height),
+            "GAME OVER\nScore: " + score + "\nPress SPACE to restart", style);
+    }
+
+    void CreateLoseLine()
+    {
+        var go = new GameObject("LoseLine");
+        go.transform.SetParent(transform, false);
+        var lr = go.AddComponent<LineRenderer>();
+        lr.material = new Material(Shader.Find("Sprites/Default"));
+        lr.startColor = lr.endColor = Color.red;
+        lr.startWidth = lr.endWidth = 0.06f;
+        lr.sortingOrder = -1;
+        float halfW = columns * columnSpacing * 0.5f + 0.5f;
+        lr.positionCount = 2;
+        lr.SetPosition(0, new Vector3(-halfW, loseLineY, 0));
+        lr.SetPosition(1, new Vector3(halfW, loseLineY, 0));
+    }
+
+    //locations
     float ColumnX(int c) => (c - (columns - 1) / 2f) * columnSpacing;
 
     Vector3 SlotPos(int c, int index)
@@ -57,7 +119,7 @@ public class BoardManager : MonoBehaviour
     Vector3 TrayPos(int slot) =>
         new Vector3((slot - (trayCount - 1) / 2f) * traySpacing, trayY, 0);
 
-   //card playing (sorting)
+   //card attributing
     void SpawnTrayCard(int slot)
     {
         var type = (CardType)Random.Range(0, 3);
@@ -82,15 +144,16 @@ public class BoardManager : MonoBehaviour
         }
     }
 
-    //set card into different rows
+    //drop cards
     public bool TryDrop(Card card)
     {
+        if (gameOver) return false;
         Vector3 p = card.transform.position;
 
-        //in card drop zone's height
+        //in drop area
         if (Mathf.Abs(p.y - columnTopY) > dropZoneHeight * 0.5f) return false;
 
-        //closest row finding
+        //closest row
         int best = -1;
         float bestDist = columnSpacing * 0.5f;
         for (int c = 0; c < columns; c++)
@@ -101,29 +164,29 @@ public class BoardManager : MonoBehaviour
         if (best < 0) return false;
         if (columnCards[best].Count >= maxPerColumn) return false;
 
-        //put the card in
+        //put in cards
         var list = columnCards[best];
         card.InColumn = true;
         int slot = card.TraySlot;
         card.TraySlot = -1;
         list.Add(card);
-        //earlier = below
-        card.SetOrder(list.Count);
-        //after being put in row, going down slowly
-        card.MoveTo(SlotPos(best, list.Count - 1)); 
+        card.SetOrder(list.Count); 
+        //card will move down slowly to the tail
+        card.MoveTo(SlotPos(best, list.Count - 1));
 
-        //fill in previous card deck's gap
+        //fill the gap of the upper zone
         trayCards[slot] = null;
         SpawnTrayCard(slot);
 
-        CheckGameOver();
+        CheckGameOver(best, card);
         return true;
     }
 
-    //select
+    //click=select
     public void OnCardClicked(Card card)
     {
-        //if click the selected 3 cards=erase
+        if (gameOver) return;
+        //if selected 1 of 3 red cards = erase
         if (selected.Contains(card))
         {
             EliminateSelected();
@@ -136,7 +199,7 @@ public class BoardManager : MonoBehaviour
         if (c < 0) return;
         int idx = columnCards[c].IndexOf(card);
         int start = FindTripleStart(columnCards[c], idx);
-        //if not selected=nothing returns
+        //if not 1 of 3 reds=no response
         if (start < 0) return;
 
         for (int i = 0; i < 3; i++)
@@ -198,15 +261,57 @@ public class BoardManager : MonoBehaviour
         }
     }
 
-    void CheckGameOver()
+    void CheckGameOver(int col, Card placed)
     {
+        //win/lose check is the final place card being put not while moving
+        float halfH = placed.GetComponent<SpriteRenderer>().bounds.extents.y;
+        float y = SlotPos(col, columnCards[col].Count - 1).y;
+        bool crossed = growDown ? (y - halfH <= loseLineY) : (y + halfH >= loseLineY);
+        if (crossed) { GameOver(); return; }
+
+        //if every rows are full the end
         foreach (var l in columnCards)
             if (l.Count < maxPerColumn) return;
+        GameOver();
     }
 
-    //card spot frame
+    void GameOver()
+    {
+        if (gameOver) return;
+        gameOver = true;
+        ClearSelection();
+       
+    }
+
+    public void ResetGame()
+    {
+        CancelInvoke();
+        ClearSelection();
+
+        foreach (var list in columnCards)
+        {
+            foreach (var c in list) if (c != null) Destroy(c.gameObject);
+            list.Clear();
+        }
+        for (int i = 0; i < trayCards.Length; i++)
+        {
+            if (trayCards[i] != null) Destroy(trayCards[i].gameObject);
+            trayCards[i] = null;
+        }
+
+        score = 0;
+        gameOver = false;
+        if (gameOverPanel != null) gameOverPanel.SetActive(false);
+        for (int i = 0; i < trayCount; i++) SpawnTrayCard(i);
+    }
+
+    //visuals
     void OnDrawGizmos()
     {
+        Gizmos.color = Color.red;
+        float halfW = columns * columnSpacing * 0.5f + 0.5f;
+        Gizmos.DrawLine(new Vector3(-halfW, loseLineY, 0), new Vector3(halfW, loseLineY, 0));
+
         Gizmos.color = Color.green;
         for (int c = 0; c < columns; c++)
         {
