@@ -394,13 +394,17 @@ MonoBehaviour:
   columnSpacing: 1.8
   columnTopY: 1.5
   cardSpacing: 0.5
-  maxPerColumn: 8
+  maxPerColumn: 9
   growDown: 1
   dropZoneHeight: 2.5
   trayCount: 3
   trayY: 4
   traySpacing: 2
   eliminateOnFirstClick: 0
+  loseLineY: -3.5
+  showLoseLine: 1
+  gameOverPanel: {fileID: 0}
+  gameOverText: {fileID: 0}
 --- !u!4 &722128940
 Transform:
   m_ObjectHideFlags: 0
